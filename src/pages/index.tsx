@@ -1,115 +1,239 @@
-import Image from "next/image";
-import { Geist, Geist_Mono } from "next/font/google";
+// pages/index.tsx
+import { useRef, useState } from 'react';
+import Matter from 'matter-js';
+import { motion, AnimatePresence } from 'framer-motion';
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const materials = {
+  rubber: 0.9,
+  metal: 0.2,
+  wood: 0.5,
+  plastic: 0.7,
+};
 
 export default function Home() {
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const engineRef = useRef<Matter.Engine | null>(null);
+  const renderRef = useRef<Matter.Render | null>(null);
+
+  const [sizeLeft, setSizeLeft] = useState(60);
+  const [sizeRight, setSizeRight] = useState(60);
+  const [massLeft, setMassLeft] = useState(1);
+  const [massRight, setMassRight] = useState(1);
+  const [materialLeft, setMaterialLeft] = useState<'rubber'|'metal'|'wood'|'plastic'>('rubber');
+  const [materialRight, setMaterialRight] = useState<'rubber'|'metal'|'wood'|'plastic'>('rubber');
+  const [started, setStarted] = useState(false);
+
+  const [velocityLeftDisplay, setVelocityLeftDisplay] = useState(0);
+  const [velocityRightDisplay, setVelocityRightDisplay] = useState(0);
+
+  const handleStart = () => {
+    // clear previous canvas
+    if (renderRef.current) {
+      Matter.Render.stop(renderRef.current);
+      renderRef.current.canvas.remove();
+      renderRef.current.textures = {} as any;
+      renderRef.current = null;
+    }
+    if (engineRef.current) {
+      Matter.World.clear(engineRef.current.world, true);
+      Matter.Engine.clear(engineRef.current);
+      engineRef.current = null;
+    }
+
+    // create new engine and renderer
+    const engine = Matter.Engine.create();
+    const render = Matter.Render.create({
+      element: sceneRef.current as HTMLElement,
+      engine,
+      options: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        wireframes: false,
+        background: '#f3f4f6',
+      },
+    });
+    engine.world.gravity.y = 0;
+    const runner = Matter.Runner.create();
+    Matter.Runner.run(runner, engine);
+    Matter.Render.run(render);
+
+    engineRef.current = engine;
+    renderRef.current = render;
+    const world = engine.world;
+
+    // static bounds
+    const boundsOpts = { isStatic: true, restitution: 1, friction: 0 };
+    const ground = Matter.Bodies.rectangle(
+      window.innerWidth / 2,
+      window.innerHeight + 50,
+      window.innerWidth,
+      100,
+      boundsOpts
+    );
+    const ceiling = Matter.Bodies.rectangle(
+      window.innerWidth / 2,
+      -50,
+      window.innerWidth,
+      100,
+      boundsOpts
+    );
+    const leftWall = Matter.Bodies.rectangle(
+      -50,
+      window.innerHeight / 2,
+      100,
+      window.innerHeight,
+      boundsOpts
+    );
+    const rightWall = Matter.Bodies.rectangle(
+      window.innerWidth + 50,
+      window.innerHeight / 2,
+      100,
+      window.innerHeight,
+      boundsOpts
+    );
+
+    // dynamic squares
+    const createSquare = (x: number, size: number, mass: number, material: keyof typeof materials) => {
+      const opts = { restitution: materials[material], friction: 0, frictionAir: 0, label: material };
+      const square = Matter.Bodies.rectangle(x, window.innerHeight / 2, size, size, opts);
+      Matter.Body.setMass(square, mass);
+      return square;
+    };
+    const left = createSquare(200, sizeLeft, massLeft, materialLeft);
+    const right = createSquare(window.innerWidth - 200, sizeRight, massRight, materialRight);
+
+    Matter.World.add(world, [ground, ceiling, leftWall, rightWall, left, right]);
+
+    // launch
+    const speed = 15; // increased for faster bounce
+    Matter.Body.setVelocity(left, { x: speed, y: 0 });
+    Matter.Body.setVelocity(right, { x: -speed, y: 0 });
+
+    // collision squish only for rubber
+    Matter.Events.on(engine, 'collisionStart', (event) => {
+      event.pairs.forEach((pair) => {
+        [pair.bodyA, pair.bodyB].forEach((body) => {
+          if (!body.isStatic && body.label === 'rubber') {
+            Matter.Body.scale(body, 1.2, 0.8);
+            setTimeout(() => {
+              Matter.Body.scale(body, 1 / 1.2, 1 / 0.8);
+            }, 50) // quicker restore;
+          }
+        });
+      });
+    });
+
+    // track velocities
+    Matter.Events.on(engine, 'afterUpdate', () => {
+      setVelocityLeftDisplay(Math.abs(left.velocity.x));
+      setVelocityRightDisplay(Math.abs(right.velocity.x));
+    });
+
+    setStarted(true);
+  };
+
+  const handleReset = () => {
+    if (sceneRef.current) {
+      sceneRef.current.innerHTML = '';
+    }
+    setVelocityLeftDisplay(0);
+    setVelocityRightDisplay(0);
+    setStarted(false);
+  };
+
   return (
-    <div
-      className={`${geistSans.className} ${geistMono.className} grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]`}
-    >
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/pages/index.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="relative w-full h-screen text-black ">
+      <AnimatePresence>
+        {!started && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="absolute z-10 p-4 bg-white bg-opacity-90 rounded-md shadow-md top-4 left-4 max-w-sm space-y-3"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+            <div className="font-bold">Left Square</div>
+            <label>Material:</label>
+            <select
+              value={materialLeft}
+              onChange={(e) => setMaterialLeft(e.target.value as any)}
+              className="border rounded px-2 py-1 w-full"
+            >
+              {Object.keys(materials).map((mat) => (
+                <option key={mat}>{mat}</option>
+              ))}
+            </select>
+            <label>Mass: {massLeft}</label>
+            <input
+              type="range"
+              min="1"
+              max="10"
+              value={massLeft}
+              onChange={(e) => setMassLeft(+e.target.value)}
+              className="w-full"
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <label>Size: {sizeLeft}px</label>
+            <input
+              type="range"
+              min="30"
+              max="150"
+              value={sizeLeft}
+              onChange={(e) => setSizeLeft(+e.target.value)}
+              className="w-full"
+            />
+
+            <div className="font-bold mt-4">Right Square</div>
+            <label>Material:</label>
+            <select
+              value={materialRight}
+              onChange={(e) => setMaterialRight(e.target.value as any)}
+              className="border rounded px-2 py-1 w-full"
+            >
+              {Object.keys(materials).map((mat) => (
+                <option key={mat}>{mat}</option>
+              ))}
+            </select>
+            <label>Mass: {massRight}</label>
+            <input
+              type="range"
+              min="1"
+              max="10"
+              value={massRight}
+              onChange={(e) => setMassRight(+e.target.value)}
+              className="w-full"
+            />
+            <label>Size: {sizeRight}px</label>
+            <input
+              type="range"
+              min="30"
+              max="150"
+              value={sizeRight}
+              onChange={(e) => setSizeRight(+e.target.value)}
+              className="w-full"
+            />
+
+            <button
+              onClick={handleStart}
+              className="mt-4 bg-blue-500 text-black px-4 py-2 rounded hover:bg-blue-600"
+            >
+              Start
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <div ref={sceneRef} className="w-full h-full"></div>
+
+      {started && (
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white/80 px-4 py-2 rounded shadow text-sm flex flex-col items-center space-y-1">
+          <div>Left Speed: {velocityLeftDisplay.toFixed(2)}</div>
+          <div>Right Speed: {velocityRightDisplay.toFixed(2)}</div>
+          <button
+            onClick={handleReset}
+            className="mt-2 bg-red-500 text-black px-3 py-1 rounded hover:bg-red-600"
           >
-            Read our docs
-          </a>
+            Reset
+          </button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
     </div>
   );
 }
